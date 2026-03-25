@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   subscribeToOrders,
   updateOrderStatus,
@@ -8,7 +8,6 @@ import {
   clearDoneOrders,
 } from "@/lib/firebase";
 
-// Simple beep using Web Audio API
 function playAlert() {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -22,11 +21,8 @@ function playAlert() {
     osc.start();
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
     osc.stop(ctx.currentTime + 0.3);
-    // Vibrate if supported
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-  } catch (e) {
-    // Audio not available
-  }
+  } catch (e) {}
 }
 
 export default function BartenderPage() {
@@ -38,7 +34,6 @@ export default function BartenderPage() {
   useEffect(() => {
     const unsub = subscribeToOrders((newOrders) => {
       const pendingCount = newOrders.filter((o: any) => o.status === "pending").length;
-      // Alert on new pending orders (not on first load)
       if (!initialLoadRef.current && pendingCount > prevCountRef.current) {
         playAlert();
       }
@@ -52,6 +47,7 @@ export default function BartenderPage() {
   const pending = orders.filter((o) => o.status === "pending");
   const making = orders.filter((o) => o.status === "making");
   const done = orders.filter((o) => o.status === "done");
+  const canceled = orders.filter((o) => o.status === "canceled");
 
   const handleStatus = async (key: string, status: string) => {
     await updateOrderStatus(key, status);
@@ -82,11 +78,10 @@ export default function BartenderPage() {
         key={order._key}
         style={{
           borderRadius: 12, marginBottom: 8, overflow: "hidden",
-          background: "rgba(237,228,212,.04)",
-          border: "1px solid rgba(237,228,212,.08)",
+          background: order.status === "canceled" ? "rgba(227,75,75,.04)" : "rgba(237,228,212,.04)",
+          border: `1px solid ${order.status === "canceled" ? "rgba(227,75,75,.15)" : "rgba(237,228,212,.08)"}`,
         }}
       >
-        {/* Header row */}
         <div
           onClick={() => setExpanded(isExpanded ? null : order._key)}
           style={{
@@ -95,11 +90,13 @@ export default function BartenderPage() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 28 }}>{order.icon}</span>
+            <span style={{ fontSize: 28, opacity: order.status === "canceled" ? 0.4 : 1 }}>{order.icon}</span>
             <div>
               <div style={{
                 fontSize: 15, fontWeight: 600,
                 fontFamily: "'Playfair Display',serif",
+                textDecoration: order.status === "canceled" ? "line-through" : "none",
+                opacity: order.status === "canceled" ? 0.5 : 1,
               }}>
                 {order.drink}
               </div>
@@ -134,24 +131,43 @@ export default function BartenderPage() {
               )}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {order.status !== "done" ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleStatus(order._key, statusAction[order.status]);
-                }}
-                style={{
-                  padding: "8px 14px", borderRadius: 8,
-                  border: `1px solid ${colors.border}`,
-                  background: colors.bg, color: colors.text,
-                  fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  fontFamily: "inherit", whiteSpace: "nowrap",
-                }}
-              >
-                {statusLabel[order.status]}
-              </button>
-            ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {order.status === "pending" || order.status === "making" ? (
+              <>
+                {/* Cancel button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStatus(order._key, "canceled");
+                  }}
+                  style={{
+                    padding: "8px 10px", borderRadius: 8,
+                    border: "1px solid rgba(227,75,75,.3)",
+                    background: "rgba(227,75,75,.08)", color: "#e34b4b",
+                    fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    fontFamily: "inherit", whiteSpace: "nowrap",
+                  }}
+                >
+                  ✕
+                </button>
+                {/* Progress button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStatus(order._key, statusAction[order.status]);
+                  }}
+                  style={{
+                    padding: "8px 14px", borderRadius: 8,
+                    border: `1px solid ${colors.border}`,
+                    background: colors.bg, color: colors.text,
+                    fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    fontFamily: "inherit", whiteSpace: "nowrap",
+                  }}
+                >
+                  {statusLabel[order.status]}
+                </button>
+              </>
+            ) : order.status === "done" ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -167,7 +183,32 @@ export default function BartenderPage() {
               >
                 ✕ Close
               </button>
-            )}
+            ) : order.status === "canceled" ? (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <span style={{
+                  fontSize: 11, color: "#e34b4b", fontWeight: 600,
+                  textTransform: "uppercase", letterSpacing: 1,
+                }}>
+                  Canceled
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClose(order._key);
+                  }}
+                  style={{
+                    padding: "6px 10px", borderRadius: 6,
+                    border: "1px solid rgba(237,228,212,.12)",
+                    background: "transparent", color: "rgba(237,228,212,.4)",
+                    fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ) : null}
             <span style={{
               color: "rgba(237,228,212,.2)", fontSize: 16,
               transition: "transform .2s",
@@ -178,7 +219,6 @@ export default function BartenderPage() {
           </div>
         </div>
 
-        {/* Expanded ingredients */}
         {isExpanded && (
           <div style={{ padding: "0 16px 14px", borderTop: "1px solid rgba(237,228,212,.06)" }}>
             {order.method && (
@@ -221,7 +261,6 @@ export default function BartenderPage() {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      {/* Header */}
       <div style={{ textAlign: "center", padding: "36px 20px 16px", position: "relative" }}>
         <div style={{
           position: "absolute", top: -80, left: "50%", transform: "translateX(-50%)",
@@ -242,7 +281,6 @@ export default function BartenderPage() {
       </div>
 
       <div style={{ padding: "0 20px 40px", maxWidth: 500, margin: "0 auto" }}>
-        {/* Pending */}
         {pending.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{
@@ -260,7 +298,6 @@ export default function BartenderPage() {
           </div>
         )}
 
-        {/* Making */}
         {making.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{
@@ -273,7 +310,6 @@ export default function BartenderPage() {
           </div>
         )}
 
-        {/* Done */}
         {done.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{
@@ -302,7 +338,18 @@ export default function BartenderPage() {
           </div>
         )}
 
-        {/* Empty state */}
+        {canceled.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, textTransform: "uppercase",
+              letterSpacing: 2, color: "#e34b4b", marginBottom: 10,
+            }}>
+              Canceled ({canceled.length})
+            </div>
+            {canceled.map(renderOrder)}
+          </div>
+        )}
+
         {orders.length === 0 && (
           <div style={{
             textAlign: "center", padding: "80px 20px",

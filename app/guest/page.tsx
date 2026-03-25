@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { cocktails } from "@/lib/cocktails";
-import { addOrder, subscribeToOrders } from "@/lib/firebase";
+import { addOrder, subscribeToOrders, removeOrder } from "@/lib/firebase";
 
-const statusLabels: Record<string, string> = { pending: "In Queue", making: "Being Made", done: "Ready!" };
-const statusPercent: Record<string, number> = { pending: 33, making: 66, done: 100 };
-const statusColor: Record<string, string> = { pending: "#d4872e", making: "#7ab8e0", done: "#7ec8a0" };
+const statusLabels: Record<string, string> = { pending: "In Queue", making: "Being Made", done: "Ready!", canceled: "Canceled" };
+const statusPercent: Record<string, number> = { pending: 33, making: 66, done: 100, canceled: 0 };
+const statusColor: Record<string, string> = { pending: "#d4872e", making: "#7ab8e0", done: "#7ec8a0", canceled: "#e34b4b" };
 
 export default function GuestPage() {
   const [search, setSearch] = useState("");
@@ -22,7 +22,6 @@ export default function GuestPage() {
   const [martiniSpirit, setMartiniSpirit] = useState("Gin");
   const [showMartiniOptions, setShowMartiniOptions] = useState(false);
 
-  // Subscribe to orders to track guest's own
   useEffect(() => {
     if (!guestName.trim()) return;
     const unsub = subscribeToOrders((allOrders) => {
@@ -51,11 +50,7 @@ export default function GuestPage() {
     setNote("");
     setMartiniDirty(false);
     setMartiniSpirit("Gin");
-    if (c.hasOptions) {
-      setShowMartiniOptions(true);
-    } else {
-      setShowMartiniOptions(false);
-    }
+    setShowMartiniOptions(!!c.hasOptions);
   };
 
   const handleOrder = async () => {
@@ -79,11 +74,8 @@ export default function GuestPage() {
       status: "pending",
     };
 
-    // Add Martini customizations
     if (selectedDrink.hasOptions) {
-      if (selectedDrink.hasOptions.dirty) {
-        order.dirty = martiniDirty;
-      }
+      if (selectedDrink.hasOptions.dirty) order.dirty = martiniDirty;
       if (selectedDrink.hasOptions.spiritChoice) {
         order.spiritChoice = martiniSpirit;
         order.drink = martiniDirty ? `Dirty Martini (${martiniSpirit})` : `Martini (${martiniSpirit})`;
@@ -104,8 +96,14 @@ export default function GuestPage() {
     setSending(false);
   };
 
-  // Show active orders + recently completed (within 2 min)
-  const activeOrders = myOrders.filter((o) => o.status !== "done" || (Date.now() - o.timestamp < 120000));
+  const handleAcknowledgeCancel = async (key: string) => {
+    await removeOrder(key);
+  };
+
+  const activeOrders = myOrders.filter((o) =>
+    o.status === "pending" || o.status === "making" || o.status === "canceled" ||
+    (o.status === "done" && Date.now() - o.timestamp < 120000)
+  );
 
   return (
     <div style={{ minHeight: "100vh", paddingBottom: 140 }}>
@@ -159,9 +157,11 @@ export default function GuestPage() {
               Your Orders
             </div>
             {activeOrders.map((order, idx) => {
+              const isCanceled = order.status === "canceled";
               const pct = statusPercent[order.status] || 33;
               const color = statusColor[order.status] || "#d4872e";
               const label = statusLabels[order.status] || "In Queue";
+
               return (
                 <div key={order._key || idx} style={{ marginBottom: idx < activeOrders.length - 1 ? 14 : 0 }}>
                   <div style={{
@@ -169,8 +169,12 @@ export default function GuestPage() {
                     marginBottom: 6,
                   }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 20 }}>{order.icon}</span>
-                      <span style={{ fontSize: 14, fontWeight: 600, fontFamily: "'Playfair Display',serif" }}>
+                      <span style={{ fontSize: 20, opacity: isCanceled ? 0.4 : 1 }}>{order.icon}</span>
+                      <span style={{
+                        fontSize: 14, fontWeight: 600, fontFamily: "'Playfair Display',serif",
+                        textDecoration: isCanceled ? "line-through" : "none",
+                        opacity: isCanceled ? 0.5 : 1,
+                      }}>
                         {order.drink}
                       </span>
                     </div>
@@ -181,26 +185,52 @@ export default function GuestPage() {
                       {label}
                     </span>
                   </div>
-                  {/* Progress bar */}
-                  <div style={{
-                    width: "100%", height: 6, borderRadius: 3,
-                    background: "rgba(237,228,212,.08)", overflow: "hidden",
-                  }}>
+
+                  {isCanceled ? (
+                    /* Canceled state with acknowledge button */
                     <div style={{
-                      width: `${pct}%`, height: "100%", borderRadius: 3,
-                      background: color,
-                      transition: "width 0.6s ease, background 0.4s ease",
-                    }} />
-                  </div>
-                  {/* Step indicators */}
-                  <div style={{
-                    display: "flex", justifyContent: "space-between", marginTop: 4,
-                    fontSize: 10, color: "rgba(237,228,212,.3)",
-                  }}>
-                    <span style={{ color: pct >= 33 ? color : undefined }}>Ordered</span>
-                    <span style={{ color: pct >= 66 ? color : undefined }}>Making</span>
-                    <span style={{ color: pct >= 100 ? color : undefined }}>Ready</span>
-                  </div>
+                      padding: "10px 14px", borderRadius: 10,
+                      background: "rgba(227,75,75,.08)", border: "1px solid rgba(227,75,75,.2)",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}>
+                      <span style={{ fontSize: 13, color: "#e34b4b" }}>
+                        The bartender canceled this order
+                      </span>
+                      <button
+                        onClick={() => handleAcknowledgeCancel(order._key)}
+                        style={{
+                          padding: "6px 14px", borderRadius: 8, border: "none",
+                          background: "#e34b4b", color: "#1a1410",
+                          fontSize: 12, fontWeight: 700, cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  ) : (
+                    /* Normal progress bar */
+                    <>
+                      <div style={{
+                        width: "100%", height: 6, borderRadius: 3,
+                        background: "rgba(237,228,212,.08)", overflow: "hidden",
+                      }}>
+                        <div style={{
+                          width: `${pct}%`, height: "100%", borderRadius: 3,
+                          background: color,
+                          transition: "width 0.6s ease, background 0.4s ease",
+                        }} />
+                      </div>
+                      <div style={{
+                        display: "flex", justifyContent: "space-between", marginTop: 4,
+                        fontSize: 10, color: "rgba(237,228,212,.3)",
+                      }}>
+                        <span style={{ color: pct >= 33 ? color : undefined }}>Ordered</span>
+                        <span style={{ color: pct >= 66 ? color : undefined }}>Making</span>
+                        <span style={{ color: pct >= 100 ? color : undefined }}>Ready</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -284,7 +314,6 @@ export default function GuestPage() {
               🍸 Customize Your Martini
             </div>
 
-            {/* Dirty toggle */}
             {selectedDrink.hasOptions.dirty && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{
@@ -314,7 +343,6 @@ export default function GuestPage() {
               </div>
             )}
 
-            {/* Spirit choice */}
             {selectedDrink.hasOptions.spiritChoice && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{
@@ -344,7 +372,6 @@ export default function GuestPage() {
               </div>
             )}
 
-            {/* Note */}
             <input
               placeholder="Add a note (e.g. extra olives)..."
               value={note}
@@ -356,7 +383,6 @@ export default function GuestPage() {
               }}
             />
 
-            {/* Order button */}
             <button
               onClick={handleOrder}
               disabled={!guestName.trim() || sending}
@@ -379,7 +405,7 @@ export default function GuestPage() {
         </div>
       )}
 
-      {/* Regular order bar (non-Martini drinks) */}
+      {/* Regular order bar */}
       {selectedDrink && !showMartiniOptions && (
         <div style={{
           position: "fixed", bottom: 0, left: 0, right: 0,
