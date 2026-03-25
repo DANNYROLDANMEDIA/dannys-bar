@@ -64,7 +64,6 @@ export default function GuestPage() {
     // Check drink limit before selecting
     if (activeOrderCount >= MAX_ACTIVE_DRINKS) {
       setShowLimitPopup(true);
-      setTimeout(() => setShowLimitPopup(false), 3500);
       return;
     }
 
@@ -81,7 +80,6 @@ export default function GuestPage() {
     // Double-check limit
     if (activeOrderCount >= MAX_ACTIVE_DRINKS) {
       setShowLimitPopup(true);
-      setTimeout(() => setShowLimitPopup(false), 3500);
       return;
     }
 
@@ -611,7 +609,7 @@ export default function GuestPage() {
             textAlign: "center", animation: "slideUp .3s ease",
             boxShadow: "0 24px 80px rgba(0,0,0,.6)",
           }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🛑</div>
+            <img src="/holdup.png" alt="Hold up" style={{ width: 120, height: 120, objectFit: "contain", marginBottom: 12 }} />
             <h2 style={{
               fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 700,
               color: "#d4872e", marginBottom: 8,
