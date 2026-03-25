@@ -8,6 +8,8 @@ const statusLabels: Record<string, string> = { pending: "In Queue", making: "Bei
 const statusPercent: Record<string, number> = { pending: 33, making: 66, done: 100, canceled: 0 };
 const statusColor: Record<string, string> = { pending: "#d4872e", making: "#7ab8e0", done: "#7ec8a0", canceled: "#e34b4b" };
 
+const MAX_ACTIVE_DRINKS = 2;
+
 export default function GuestPage() {
   const [search, setSearch] = useState("");
   const [selectedDrink, setSelectedDrink] = useState<typeof cocktails[0] | null>(null);
@@ -16,6 +18,13 @@ export default function GuestPage() {
   const [orderSent, setOrderSent] = useState<any>(null);
   const [sending, setSending] = useState(false);
   const [myOrders, setMyOrders] = useState<any[]>([]);
+
+  // Age verification
+  const [ageVerified, setAgeVerified] = useState<boolean | null>(null);
+  const [isUnder21, setIsUnder21] = useState(false);
+
+  // Drink limit popup
+  const [showLimitPopup, setShowLimitPopup] = useState(false);
 
   // Martini options
   const [martiniDirty, setMartiniDirty] = useState(false);
@@ -40,12 +49,25 @@ export default function GuestPage() {
       c.spirit.toLowerCase().includes(search.toLowerCase())
   );
 
+  // Count active (non-done, non-canceled) orders
+  const activeOrderCount = myOrders.filter(
+    (o) => o.status === "pending" || o.status === "making"
+  ).length;
+
   const handleSelectDrink = (c: typeof cocktails[0]) => {
     if (selectedDrink?.name === c.name) {
       setSelectedDrink(null);
       setShowMartiniOptions(false);
       return;
     }
+
+    // Check drink limit before selecting
+    if (activeOrderCount >= MAX_ACTIVE_DRINKS) {
+      setShowLimitPopup(true);
+      setTimeout(() => setShowLimitPopup(false), 3500);
+      return;
+    }
+
     setSelectedDrink(c);
     setNote("");
     setMartiniDirty(false);
@@ -55,6 +77,13 @@ export default function GuestPage() {
 
   const handleOrder = async () => {
     if (!selectedDrink || !guestName.trim() || sending) return;
+
+    // Double-check limit
+    if (activeOrderCount >= MAX_ACTIVE_DRINKS) {
+      setShowLimitPopup(true);
+      setTimeout(() => setShowLimitPopup(false), 3500);
+      return;
+    }
 
     const isDirty = selectedDrink.hasOptions?.dirty && martiniDirty;
     const chosenIngredients = isDirty && selectedDrink.dirtyIngredients
@@ -105,6 +134,113 @@ export default function GuestPage() {
     (o.status === "done" && Date.now() - o.timestamp < 120000)
   );
 
+  // ─── AGE VERIFICATION SCREEN ───
+  if (ageVerified === null) {
+    return (
+      <div style={{
+        minHeight: "100vh", display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: 20, position: "relative", overflow: "hidden",
+      }}>
+        <div style={{
+          position: "absolute", top: "15%", left: "50%", transform: "translateX(-50%)",
+          width: 500, height: 300,
+          background: "radial-gradient(ellipse,rgba(212,135,46,.15) 0%,transparent 70%)",
+          pointerEvents: "none",
+        }} />
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🥃</div>
+        <h1 style={{
+          fontFamily: "'Playfair Display',Georgia,serif", fontSize: 28, fontWeight: 700,
+          background: "linear-gradient(135deg,#ede4d4,#d4872e)",
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+          marginBottom: 8,
+        }}>
+          Danny&apos;s Bar
+        </h1>
+        <p style={{
+          fontSize: 18, fontFamily: "'Playfair Display',serif", color: "#ede4d4",
+          marginBottom: 32, textAlign: "center",
+        }}>
+          Are you 21 years of age or older?
+        </p>
+        <div style={{
+          display: "flex", gap: 14, width: "100%", maxWidth: 300,
+        }}>
+          <button
+            onClick={() => setAgeVerified(true)}
+            style={{
+              flex: 1, padding: 16, borderRadius: 14,
+              border: "1px solid rgba(126,200,160,.4)",
+              background: "rgba(126,200,160,.1)", color: "#7ec8a0",
+              fontSize: 18, fontWeight: 700, cursor: "pointer",
+              fontFamily: "'Playfair Display',serif",
+              transition: "all .2s",
+            }}
+          >
+            Yes
+          </button>
+          <button
+            onClick={() => { setAgeVerified(false); setIsUnder21(true); }}
+            style={{
+              flex: 1, padding: 16, borderRadius: 14,
+              border: "1px solid rgba(237,228,212,.15)",
+              background: "rgba(237,228,212,.04)", color: "#ede4d4",
+              fontSize: 18, fontWeight: 700, cursor: "pointer",
+              fontFamily: "'Playfair Display',serif",
+              transition: "all .2s",
+            }}
+          >
+            No
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── UNDER 21 SCREEN ───
+  if (isUnder21) {
+    return (
+      <div style={{
+        minHeight: "100vh", display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: 20, position: "relative", overflow: "hidden",
+        textAlign: "center",
+      }}>
+        <div style={{
+          position: "absolute", top: "15%", left: "50%", transform: "translateX(-50%)",
+          width: 500, height: 300,
+          background: "radial-gradient(ellipse,rgba(212,135,46,.15) 0%,transparent 70%)",
+          pointerEvents: "none",
+        }} />
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🧃</div>
+        <h1 style={{
+          fontFamily: "'Playfair Display',Georgia,serif", fontSize: 24, fontWeight: 700,
+          color: "#ede4d4", marginBottom: 12,
+        }}>
+          Sorry, no drinks for you!
+        </h1>
+        <p style={{
+          fontSize: 16, color: "rgba(237,228,212,.6)", maxWidth: 300,
+          lineHeight: 1.6, marginBottom: 32,
+        }}>
+          You must be 21 or older to order cocktails. But don&apos;t worry — ask Danny for a juice or soda! 🥤
+        </p>
+        <button
+          onClick={() => { setAgeVerified(null); setIsUnder21(false); }}
+          style={{
+            padding: "12px 28px", borderRadius: 12,
+            border: "1px solid rgba(237,228,212,.15)",
+            background: "rgba(237,228,212,.04)", color: "rgba(237,228,212,.5)",
+            fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          ← Go back
+        </button>
+      </div>
+    );
+  }
+
+  // ─── MAIN MENU ───
   return (
     <div style={{ minHeight: "100vh", paddingBottom: 140 }}>
       {/* Header */}
@@ -187,7 +323,6 @@ export default function GuestPage() {
                   </div>
 
                   {isCanceled ? (
-                    /* Canceled state with acknowledge button */
                     <div style={{
                       padding: "10px 14px", borderRadius: 10,
                       background: "rgba(227,75,75,.08)", border: "1px solid rgba(227,75,75,.2)",
@@ -209,7 +344,6 @@ export default function GuestPage() {
                       </button>
                     </div>
                   ) : (
-                    /* Normal progress bar */
                     <>
                       <div style={{
                         width: "100%", height: 6, borderRadius: 3,
@@ -459,6 +593,54 @@ export default function GuestPage() {
           <div style={{ fontSize: 14, fontWeight: 600, color: "#7ec8a0" }}>Order sent!</div>
           <div style={{ fontSize: 12, color: "rgba(237,228,212,.5)", marginTop: 2 }}>
             {orderSent.icon} {orderSent.drink} for {orderSent.guest}
+          </div>
+        </div>
+      )}
+
+      {/* Drink limit popup */}
+      {showLimitPopup && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(10,8,6,.85)", backdropFilter: "blur(8px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 200, padding: 20,
+        }}>
+          <div style={{
+            background: "#231d16", border: "1px solid rgba(212,135,46,.3)",
+            borderRadius: 20, padding: "32px 24px", maxWidth: 340,
+            textAlign: "center", animation: "slideUp .3s ease",
+            boxShadow: "0 24px 80px rgba(0,0,0,.6)",
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🛑</div>
+            <h2 style={{
+              fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 700,
+              color: "#d4872e", marginBottom: 8,
+            }}>
+              You Need To Slow Down!
+            </h2>
+            <p style={{
+              fontSize: 14, color: "rgba(237,228,212,.6)", lineHeight: 1.6,
+              marginBottom: 12,
+            }}>
+              Let&apos;s start with two drinks. Wait for your current orders to be ready before ordering more.
+            </p>
+            <p style={{
+              fontSize: 12, color: "rgba(212,135,46,.5)", lineHeight: 1.6,
+              marginBottom: 20, fontStyle: "italic",
+            }}>
+              Ephesians 5:18 &ldquo;Also, do not get drunk with wine, in which there is debauchery, but keep getting filled with spirit.&rdquo;
+            </p>
+            <button
+              onClick={() => setShowLimitPopup(false)}
+              style={{
+                padding: "12px 32px", borderRadius: 12, border: "none",
+                background: "#d4872e", color: "#1a1410",
+                fontSize: 15, fontWeight: 700, cursor: "pointer",
+                fontFamily: "'Playfair Display',serif",
+              }}
+            >
+              Got it
+            </button>
           </div>
         </div>
       )}
