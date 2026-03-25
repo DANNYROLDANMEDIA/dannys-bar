@@ -114,6 +114,24 @@ export default function BartenderPage() {
                   &ldquo;{order.note}&rdquo;
                 </div>
               )}
+              {(order.dirty !== undefined || order.spiritChoice) && (
+                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                  {order.dirty && (
+                    <span style={{
+                      fontSize: 10, padding: "2px 8px", borderRadius: 6,
+                      background: "rgba(168,181,69,.15)", color: "#a8b545",
+                      fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5,
+                    }}>🫒 Dirty</span>
+                  )}
+                  {order.spiritChoice && (
+                    <span style={{
+                      fontSize: 10, padding: "2px 8px", borderRadius: 6,
+                      background: "rgba(138,180,178,.15)", color: "#8ab4b2",
+                      fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5,
+                    }}>{order.spiritChoice}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

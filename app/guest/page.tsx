@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cocktails } from "@/lib/cocktails";
-import { addOrder } from "@/lib/firebase";
+import { addOrder, subscribeToOrders } from "@/lib/firebase";
+
+const statusLabels: Record<string, string> = { pending: "In Queue", making: "Being Made", done: "Ready!" };
+const statusPercent: Record<string, number> = { pending: 33, making: 66, done: 100 };
+const statusColor: Record<string, string> = { pending: "#d4872e", making: "#7ab8e0", done: "#7ec8a0" };
 
 export default function GuestPage() {
   const [search, setSearch] = useState("");
@@ -11,6 +15,24 @@ export default function GuestPage() {
   const [note, setNote] = useState("");
   const [orderSent, setOrderSent] = useState<any>(null);
   const [sending, setSending] = useState(false);
+  const [myOrders, setMyOrders] = useState<any[]>([]);
+
+  // Martini options
+  const [martiniDirty, setMartiniDirty] = useState(false);
+  const [martiniSpirit, setMartiniSpirit] = useState("Gin");
+  const [showMartiniOptions, setShowMartiniOptions] = useState(false);
+
+  // Subscribe to orders to track guest's own
+  useEffect(() => {
+    if (!guestName.trim()) return;
+    const unsub = subscribeToOrders((allOrders) => {
+      const mine = allOrders.filter(
+        (o: any) => o.guest?.toLowerCase() === guestName.trim().toLowerCase()
+      );
+      setMyOrders(mine);
+    });
+    return () => unsub();
+  }, [guestName]);
 
   const filtered = cocktails.filter(
     (c) =>
@@ -19,26 +41,62 @@ export default function GuestPage() {
       c.spirit.toLowerCase().includes(search.toLowerCase())
   );
 
+  const handleSelectDrink = (c: typeof cocktails[0]) => {
+    if (selectedDrink?.name === c.name) {
+      setSelectedDrink(null);
+      setShowMartiniOptions(false);
+      return;
+    }
+    setSelectedDrink(c);
+    setNote("");
+    setMartiniDirty(false);
+    setMartiniSpirit("Gin");
+    if (c.hasOptions) {
+      setShowMartiniOptions(true);
+    } else {
+      setShowMartiniOptions(false);
+    }
+  };
+
   const handleOrder = async () => {
     if (!selectedDrink || !guestName.trim() || sending) return;
-    setSending(true);
-    const order = {
+
+    const isDirty = selectedDrink.hasOptions?.dirty && martiniDirty;
+    const chosenIngredients = isDirty && selectedDrink.dirtyIngredients
+      ? selectedDrink.dirtyIngredients
+      : selectedDrink.ingredients;
+
+    const order: any = {
       drink: selectedDrink.name,
       icon: selectedDrink.icon,
       spirit: selectedDrink.spirit,
       method: selectedDrink.method,
-      ingredients: selectedDrink.ingredients,
+      ingredients: chosenIngredients,
       guest: guestName.trim(),
       note: note.trim() || null,
       time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
       timestamp: Date.now(),
       status: "pending",
     };
+
+    // Add Martini customizations
+    if (selectedDrink.hasOptions) {
+      if (selectedDrink.hasOptions.dirty) {
+        order.dirty = martiniDirty;
+      }
+      if (selectedDrink.hasOptions.spiritChoice) {
+        order.spiritChoice = martiniSpirit;
+        order.drink = martiniDirty ? `Dirty Martini (${martiniSpirit})` : `Martini (${martiniSpirit})`;
+      }
+    }
+
+    setSending(true);
     try {
       await addOrder(order);
       setOrderSent(order);
       setSelectedDrink(null);
       setNote("");
+      setShowMartiniOptions(false);
       setTimeout(() => setOrderSent(null), 3000);
     } catch (e) {
       console.error("Order failed:", e);
@@ -46,8 +104,11 @@ export default function GuestPage() {
     setSending(false);
   };
 
+  // Show active orders + recently completed (within 2 min)
+  const activeOrders = myOrders.filter((o) => o.status !== "done" || (Date.now() - o.timestamp < 120000));
+
   return (
-    <div style={{ minHeight: "100vh", paddingBottom: 120 }}>
+    <div style={{ minHeight: "100vh", paddingBottom: 140 }}>
       {/* Header */}
       <div style={{ textAlign: "center", padding: "36px 20px 16px", position: "relative" }}>
         <div style={{
@@ -83,6 +144,70 @@ export default function GuestPage() {
         />
       </div>
 
+      {/* My Orders Tracker */}
+      {activeOrders.length > 0 && (
+        <div style={{ padding: "0 20px 14px" }}>
+          <div style={{
+            borderRadius: 14, overflow: "hidden",
+            background: "rgba(237,228,212,.04)", border: "1px solid rgba(237,228,212,.08)",
+            padding: "12px 16px",
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, textTransform: "uppercase",
+              letterSpacing: 2, color: "#d4872e", marginBottom: 10,
+            }}>
+              Your Orders
+            </div>
+            {activeOrders.map((order, idx) => {
+              const pct = statusPercent[order.status] || 33;
+              const color = statusColor[order.status] || "#d4872e";
+              const label = statusLabels[order.status] || "In Queue";
+              return (
+                <div key={order._key || idx} style={{ marginBottom: idx < activeOrders.length - 1 ? 14 : 0 }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    marginBottom: 6,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 20 }}>{order.icon}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, fontFamily: "'Playfair Display',serif" }}>
+                        {order.drink}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, color: color,
+                      textTransform: "uppercase", letterSpacing: 1,
+                    }}>
+                      {label}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{
+                    width: "100%", height: 6, borderRadius: 3,
+                    background: "rgba(237,228,212,.08)", overflow: "hidden",
+                  }}>
+                    <div style={{
+                      width: `${pct}%`, height: "100%", borderRadius: 3,
+                      background: color,
+                      transition: "width 0.6s ease, background 0.4s ease",
+                    }} />
+                  </div>
+                  {/* Step indicators */}
+                  <div style={{
+                    display: "flex", justifyContent: "space-between", marginTop: 4,
+                    fontSize: 10, color: "rgba(237,228,212,.3)",
+                  }}>
+                    <span style={{ color: pct >= 33 ? color : undefined }}>Ordered</span>
+                    <span style={{ color: pct >= 66 ? color : undefined }}>Making</span>
+                    <span style={{ color: pct >= 100 ? color : undefined }}>Ready</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div style={{ padding: "0 20px 14px", position: "relative" }}>
         <span style={{
@@ -108,10 +233,7 @@ export default function GuestPage() {
           return (
             <div
               key={c.name}
-              onClick={() => {
-                setSelectedDrink(isSelected ? null : c);
-                if (isSelected) setNote("");
-              }}
+              onClick={() => handleSelectDrink(c)}
               style={{
                 padding: "16px 14px", borderRadius: 14, cursor: "pointer",
                 background: isSelected ? "rgba(212,135,46,.15)" : "rgba(237,228,212,.04)",
@@ -143,15 +265,128 @@ export default function GuestPage() {
         </div>
       )}
 
-      {/* Bottom order bar */}
-      {selectedDrink && (
+      {/* Martini Options Popup */}
+      {showMartiniOptions && selectedDrink?.hasOptions && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0,
+          padding: "16px 20px 28px",
+          background: "linear-gradient(transparent, #1a1410 15%)",
+          zIndex: 10,
+        }}>
+          <div style={{
+            background: "#231d16", border: "1px solid rgba(212,135,46,.25)",
+            borderRadius: 16, padding: "20px 18px", marginBottom: 10,
+          }}>
+            <div style={{
+              fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display',serif",
+              textAlign: "center", marginBottom: 16, color: "#ede4d4",
+            }}>
+              🍸 Customize Your Martini
+            </div>
+
+            {/* Dirty toggle */}
+            {selectedDrink.hasOptions.dirty && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{
+                  fontSize: 12, fontWeight: 600, textTransform: "uppercase",
+                  letterSpacing: 1.5, color: "rgba(212,135,46,.7)", marginBottom: 8,
+                }}>
+                  Do you want it Dirty?
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[false, true].map((val) => (
+                    <button
+                      key={String(val)}
+                      onClick={() => setMartiniDirty(val)}
+                      style={{
+                        flex: 1, padding: "10px", borderRadius: 10, cursor: "pointer",
+                        border: `1px solid ${martiniDirty === val ? "rgba(212,135,46,.5)" : "rgba(237,228,212,.12)"}`,
+                        background: martiniDirty === val ? "rgba(212,135,46,.15)" : "rgba(237,228,212,.04)",
+                        color: martiniDirty === val ? "#d4872e" : "#ede4d4",
+                        fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+                        transition: "all .2s",
+                      }}
+                    >
+                      {val ? "🫒 Dirty" : "✨ Classic"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Spirit choice */}
+            {selectedDrink.hasOptions.spiritChoice && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{
+                  fontSize: 12, fontWeight: 600, textTransform: "uppercase",
+                  letterSpacing: 1.5, color: "rgba(212,135,46,.7)", marginBottom: 8,
+                }}>
+                  Choose your spirit
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {selectedDrink.hasOptions.spiritChoice.map((spirit) => (
+                    <button
+                      key={spirit}
+                      onClick={() => setMartiniSpirit(spirit)}
+                      style={{
+                        flex: 1, padding: "10px", borderRadius: 10, cursor: "pointer",
+                        border: `1px solid ${martiniSpirit === spirit ? "rgba(212,135,46,.5)" : "rgba(237,228,212,.12)"}`,
+                        background: martiniSpirit === spirit ? "rgba(212,135,46,.15)" : "rgba(237,228,212,.04)",
+                        color: martiniSpirit === spirit ? "#d4872e" : "#ede4d4",
+                        fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+                        transition: "all .2s",
+                      }}
+                    >
+                      {spirit}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Note */}
+            <input
+              placeholder="Add a note (e.g. extra olives)..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 10,
+                border: "1px solid rgba(237,228,212,.1)", background: "rgba(237,228,212,.06)",
+                color: "#ede4d4", fontSize: 13, outline: "none", fontFamily: "inherit",
+              }}
+            />
+
+            {/* Order button */}
+            <button
+              onClick={handleOrder}
+              disabled={!guestName.trim() || sending}
+              style={{
+                width: "100%", padding: 14, borderRadius: 12, border: "none",
+                background: guestName.trim() ? "#d4872e" : "rgba(212,135,46,.3)",
+                color: guestName.trim() ? "#1a1410" : "rgba(26,20,16,.5)",
+                fontSize: 15, fontWeight: 700, cursor: guestName.trim() ? "pointer" : "default",
+                fontFamily: "'Playfair Display',serif",
+                transition: "all .2s", opacity: sending ? 0.6 : 1,
+              }}
+            >
+              {sending
+                ? "Sending..."
+                : guestName.trim()
+                ? `Order ${martiniDirty ? "Dirty " : ""}Martini (${martiniSpirit})`
+                : "Enter your name first"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Regular order bar (non-Martini drinks) */}
+      {selectedDrink && !showMartiniOptions && (
         <div style={{
           position: "fixed", bottom: 0, left: 0, right: 0,
           padding: "12px 20px 28px",
           background: "linear-gradient(transparent, #1a1410 25%)",
           zIndex: 10,
         }}>
-          {/* Note input */}
           <input
             placeholder="Add a note (e.g. extra lime, no salt)..."
             value={note}
